@@ -1,40 +1,58 @@
 import ctypes
+from ctypes import wintypes
 
-def verificar_pin_sistema():
-    """Llama al diálogo nativo de credenciales de Windows usando ctypes."""
-    try:
-        class CREDUI_INFO(ctypes.Structure):
-            _fields_ = [
-                ("cbSize", ctypes.c_ulong),
-                ("hwndParent", ctypes.c_void_p),
-                ("pszMessageText", ctypes.c_wchar_p),
-                ("pszCaptionText", ctypes.c_wchar_p),
-                ("hbmBanner", ctypes.c_void_p),
-            ]
+def verificar_biometria_ltsc():
+    """Invoca el cuadro de diálogo nativo de credenciales de Windows, 
+    autocompletando el usuario actual para una validación rápida."""
+    class CREDUI_INFO(ctypes.Structure):
+        _fields_ = [
+            ("cbSize", wintypes.DWORD),
+            ("hwndParent", wintypes.HWND),
+            ("pszMessageText", wintypes.LPCWSTR),
+            ("pszCaptionText", wintypes.LPCWSTR),
+            ("hbmBanner", wintypes.HBITMAP),
+        ]
 
-        info = CREDUI_INFO()
-        info.cbSize = ctypes.sizeof(CREDUI_INFO)
-        info.hwndParent = None
-        info.pszMessageText = "Por favor, introduce tu PIN o usa Windows Hello para continuar."
-        info.pszCaptionText = "Seguridad de Finanzas Personales"
+    # Cargamos la librería nativa de credenciales del sistema
+    credui = ctypes.windll.credui
 
-        auth_package = ctypes.c_ulong(0)
-        out_auth_buffer = ctypes.c_void_p()
-        out_auth_buffer_size = ctypes.c_ulong(0)
-        f_save = ctypes.c_bool(False)
+    info = CREDUI_INFO()
+    info.cbSize = ctypes.sizeof(CREDUI_INFO)
+    info.hwndParent = None
+    info.pszMessageText = "Confirme su identidad para acceder a Finanzas."
+    info.pszCaptionText = "Seguridad del Sistema - Finanzas"
+    info.hbmBanner = None
 
-        resultado = ctypes.windll.credui.CredUIPromptForWindowsCredentialsW(
-            ctypes.byref(info),
-            0,
-            ctypes.byref(auth_package),
-            None,
-            0,
-            ctypes.byref(out_auth_buffer),
-            ctypes.byref(out_auth_buffer_size),
-            ctypes.byref(f_save),
-            1
-        )
+    auth_package = wintypes.ULONG(0)
+    out_auth_buffer = ctypes.c_void_p()
+    out_auth_buffer_size = wintypes.ULONG(0)
+    save = wintypes.BOOL(False)
 
-        return resultado == 0
-    except Exception:
-        return False
+    # 0x00000002 corresponde a CREDUI_FLAGS_COMPLETE_USERNAME 
+    # para tomar el usuario actual de la computadora en automático.
+    resultado = credui.CredUIPromptForWindowsCredentialsW(
+        ctypes.byref(info),
+        0,
+        ctypes.byref(auth_package),
+        None,
+        0,
+        ctypes.byref(out_auth_buffer),
+        ctypes.byref(out_auth_buffer_size),
+        ctypes.byref(save),
+        0x00000002  
+    )
+
+    # Si el usuario se autentica correctamente (ERROR_SUCCESS)
+    if resultado == 0:
+        if out_auth_buffer:
+            ctypes.windll.ole32.CoTaskMemFree(out_auth_buffer)
+        return True
+    
+    return False
+
+if __name__ == "__main__":
+    print("Iniciando autenticación nativa...")
+    if verificar_biometria_ltsc():
+        print("¡Acceso concedido! Entrando al sistema de finanzas...")
+    else:
+        print("Acceso cancelado o denegado.")
